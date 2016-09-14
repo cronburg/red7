@@ -1,26 +1,35 @@
 module Examples.First where
 import Game.Red7.Types
 import Game.Red7.Engine
+import Game.Red7.Lib
+
+import Control.Monad.State.Lazy (execState)
+import Control.Lens
 
 p1 = defPlayer
-  { name  = "Karl"
-  , palette = [Card {color = RED, num = 7}]
+  { _name  = "Karl"
+  , _palette = [Card {_color = RED, _num = 7}]
   }
 
 p2 = defPlayer
-  { name  = "Harry"
-  , palette = [Card {color = VIOLET, num = 1}]
+  { _name  = "Harry"
+  , _palette = [Card {_color = VIOLET, _num = 1}]
   }
 
 p3 = defPlayer
-  { name  = "Lydia"
-  , palette = [Card {color = YELLOW, num = 6}]
+  { _name  = "Lydia"
+  , _palette = [Card {_color = YELLOW, _num = 6}]
   }
 
 p4 = defPlayer
-  { name  = "Charles"
-  , palette = [Card {color = ORANGE, num = 6}]
+  { _name  = "Charles"
+  , _palette = [Card {_color = ORANGE, _num = 6}]
   }
 
-players = [p1,p2,p3,p4]
+fstPlayers = [p1,p2,p3,p4]
+
+noPalette p = p {_palette = []}
+fstPlayers' = map noPalette fstPlayers
+
+game = (defGame (mkStdGen 31)) {_players = fstPlayers'}
 

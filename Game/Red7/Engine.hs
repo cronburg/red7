@@ -1,10 +1,103 @@
+{-# LANGUAGE RankNTypes, KindSignatures, FlexibleContexts #-}
 module Game.Red7.Engine where
 import Data.List (maximumBy, group, groupBy, sort)
-import Game.Red7.Types
 import Data.Maybe (maybeToList, fromJust)
+import Control.Monad.State.Lazy (put, get)
+import Control.Monad (replicateM)
+import Control.Lens
+import Control.Monad.State.Class (MonadState)
 
+import Game.Red7.Types
+import Game.Red7.Lib
+
+shuffleDeck :: GameState ()
+shuffleDeck = do
+  g <- get
+  put $ g { _deck = _shuffle g $ _deck g }
+
+-- Draw n cards from the deck
+draw :: Int -> GameState [Card]
+draw n = do
+  g <- get
+  let cs    = take n $ _deck g
+  let deck' = drop n $ _deck g
+  put $ deck .~ deck' $ g
+  return cs
+
+-- Deal n cards to the first player in the list of players
+-- (either to their palette or to their hand)
+--deal :: Int -> ([Card] -> GameState ()) -> GameState ()
+--deal :: forall f t (m :: * -> *).
+--        (MonadState Game m, Functor f) =>
+--        Int -> (([Card] -> f [Card]) -> Player -> f Player) -> m ()
+dealHand n = do
+  cs <- draw n
+  g  <- get
+  let p1  = head (g ^. players)
+  let p1' = hand .~ (cs ++ (p1 ^. hand)) $ p1
+  put $ players .~ (p1' : (tail $ g ^. players)) $ g
+
+dealPalette n = do
+  cs <- draw n
+  g  <- get
+  let p1 = head (g ^. players)
+  let p1' = palette .~ (cs ++ (p1 ^. palette)) $ p1
+  put $ players .~ (p1' : (tail $ g ^. players)) $ g
+
+----  let p1    = head (g ^. players)
+----  let p1'   = hand .~ (cs ++ (p1 ^. hand)) $ p1
+--  let p1'   = setter (cs ++ (getter p1)) $ p1
+  
+--  put $ players .~ (p1' : (tail $ g ^. players)) g
+  
+  {-let p1  = (head $ players g)
+  let p1' = p1 { hand = h ++ hand p1 }
+  let ps  = p1' : (tail $ players g)
+  -}
+
+--  g' <- get
+--  put $ g' { _deck = deck' }
+
+-- Rotate 
+rotatePlayers :: Int -> GameState ()
+rotatePlayers n = do
+  g <- get
+  put $ g { _players = rotate n (_players g) }
+
+-- Deal n cards to the first player and rotate the players
+dealAndShift :: Int -> GameState ()
+dealAndShift n = do
+  dealHand n --(\p1 -> p1 .~ hand, \val p1 -> hand .~ val $ p1)
+--  deal n hand --(hand :: ([Card] -> f [Card]) -> Player -> f Player) :: GameState ())
+  rotatePlayers 1
+
+dealHands :: Int -> GameState ()
+dealHands n = do
+  g <- get
+  replicateM (length $ g ^. players) (dealHand n >> rotatePlayers 1)
+  return ()
+
+dealPalettes :: Int -> GameState ()
+dealPalettes n = do
+  g <- get
+  replicateM (length $ g ^. players) (dealPalette n >> rotatePlayers 1)
+  return ()
+
+setupPlayers = undefined
+
+-- Shuffle deck, deal 7 cards each, deal 1 card to each player's palette,
+-- and shift the players list such that the player to the left of the
+-- player with the highest:
+setupGame :: GameState ()
+setupGame = do
+  shuffleDeck
+  dealHands    7
+  dealPalettes 1
+--  setupPlayers
+
+------------------------------------------------------------------------------
 winner :: Card -> [Player] -> Maybe Player
-winner top = case color top of
+winner top = case _color top of
   VIOLET -> most_below 4
   INDIGO -> Just . most_row
   BLUE   -> Just . most_diff_color
@@ -18,11 +111,11 @@ most_below' n = (\cs' ->
   if length cs' > 0
     then (length cs', maximum cs')
     else (0, defCard))
-  . (filter ((>) n . num))
+  . (filter ((>) n . _num))
 
 most_below n = maybeMaxBy (\p1 p2 ->
-  let a = (most_below' n . palette) p1
-      b = (most_below' n . palette) p2
+  let a = (most_below' n . _palette) p1
+      b = (most_below' n . _palette) p2
   in  if fst a == 0 && fst b == 0
         then Nothing
         else Just $ a `compare` b)
@@ -36,10 +129,10 @@ most_row' cs = case length cs of
     $ map (\cs -> (length cs, (fst . head) cs))
     $ filter (\(c:cs) -> snd c == 1)
     $ groupBy (\a b -> snd a == snd b)
-    $ zipWith (\a b -> (a, num b - num a)) cs (tail cs)
+    $ zipWith (\a b -> (a, _num b - _num a)) cs (tail cs)
 
 most_row = maximumBy (\p1 p2 ->
-  (most_row' . palette) p1 `compare` (most_row' . palette) p2)
+  (most_row' . _palette) p1 `compare` (most_row' . _palette) p2)
 
 -----------------------------
 -- http://stackoverflow.com/a/16109302
@@ -50,14 +143,14 @@ most_diff_color' = (\cs' -> (length cs', maximum cs')) . rmdups
 
 most_diff_color :: [Player] -> Player
 most_diff_color = maximumBy (\p1 p2 ->
-  (most_diff_color' . palette) p1 `compare` (most_diff_color' . palette) p2)
+  (most_diff_color' . _palette) p1 `compare` (most_diff_color' . _palette) p2)
 
 -----------------------------
 most_even' = (\cs' ->
   if length cs' > 0
     then (length cs', maximum cs')
     else (0, defCard))
-  . (filter (even . num))
+  . (filter (even . _num))
 
 maybeMaxBy        :: (Player -> Player -> Maybe Ordering) -> [Player] -> Maybe Player
 maybeMaxBy _ []   = Nothing
@@ -74,33 +167,33 @@ maybeMaxBy cmp xs = foldl maxBy Nothing $ map Just xs
 
 most_even :: [Player] -> Maybe Player
 most_even = maybeMaxBy (\p1 p2 ->
-  let a = (most_even' . palette) p1
-      b = (most_even' . palette) p2
+  let a = (most_even' . _palette) p1
+      b = (most_even' . _palette) p2
   in  if fst a == 0 && fst b == 0
         then Nothing
         else Just $ a `compare` b)
 
 -----------------------------
 most_color' cs  = maximumBy cmp_test_fst $
-  [((\cs' -> (length cs', c)) . (filter ((==) c . color))) cs | c <- colors]
+  [((\cs' -> (length cs', c)) . (filter ((==) c . _color))) cs | c <- colors]
 
 most_color :: [Player] -> Player
 most_color = maximumBy (\p1 p2 ->
-  (most_color' . palette) p1 `compare` (most_color' . palette) p2)
+  (most_color' . _palette) p1 `compare` (most_color' . _palette) p2)
 
 -----------------------------
 most_number' :: [Card] -> (Int, Int)
 most_number' cs = maximumBy cmp_test_fst $
-  [((\cs' -> (length cs', i)) . (filter ((==) i . num))) cs | i <- numbers]
+  [((\cs' -> (length cs', i)) . (filter ((==) i . _num))) cs | i <- numbers]
 
 most_number :: [Player] -> Player
 most_number = maximumBy (\p1 p2 ->
-  (most_number' . palette) p1 `compare` (most_number' . palette) p2)
+  (most_number' . _palette) p1 `compare` (most_number' . _palette) p2)
 
 -----------------------------
 highest :: [Player] -> Player
 highest = maximumBy (\p1 p2 ->
-  maximum (palette p1) `compare` maximum (palette p2))
+  maximum (_palette p1) `compare` maximum (_palette p2))
 
 {- http://asmadigames.com/Red7Rules.pdf -}
 {-
