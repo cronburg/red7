@@ -30,32 +30,6 @@ data Player = Player
   , _palette :: [Card]
   } deriving (Show)
 
-{-
--- TODO: boilerplate ...
-putHand :: [Card] -> GameState ()
-putHand h = undefined {-do
-  g <- get
-  put $ g { players = ((head . players) g $ {hand = h}) : (tail . players) g }
--}
-
-putPalette :: [Card] -> GameState ()
-putPalette p = undefined {-do
-  g <- get
-  put $ g { _players = ((head . players) palette = p }
--}
-
-putPlayers :: [Player] -> GameState ()
-putPlayers ps = undefined {-do
-  g <- get
-  put $ g { _players = ps }
--}
-
-putDeck :: [Card] -> GameState ()
-putDeck d = do
-  g <- get
-  put $ g { _deck = d }
--}
-
 defPlayer = Player { _name = "", _hand = [], _palette = [] }
 
 card_comp :: Card -> Card -> Ordering

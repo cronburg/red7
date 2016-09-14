@@ -24,12 +24,11 @@ draw n = do
   put $ deck .~ deck' $ g
   return cs
 
+-- TODO: figure out how to make lenses first class (pass them around)
+-- without the type system barfing.
+
 -- Deal n cards to the first player in the list of players
 -- (either to their palette or to their hand)
---deal :: Int -> ([Card] -> GameState ()) -> GameState ()
---deal :: forall f t (m :: * -> *).
---        (MonadState Game m, Functor f) =>
---        Int -> (([Card] -> f [Card]) -> Player -> f Player) -> m ()
 dealHand n = do
   cs <- draw n
   g  <- get
@@ -44,20 +43,6 @@ dealPalette n = do
   let p1' = palette .~ (cs ++ (p1 ^. palette)) $ p1
   put $ players .~ (p1' : (tail $ g ^. players)) $ g
 
-----  let p1    = head (g ^. players)
-----  let p1'   = hand .~ (cs ++ (p1 ^. hand)) $ p1
---  let p1'   = setter (cs ++ (getter p1)) $ p1
-  
---  put $ players .~ (p1' : (tail $ g ^. players)) g
-  
-  {-let p1  = (head $ players g)
-  let p1' = p1 { hand = h ++ hand p1 }
-  let ps  = p1' : (tail $ players g)
-  -}
-
---  g' <- get
---  put $ g' { _deck = deck' }
-
 -- Rotate 
 rotatePlayers :: Int -> GameState ()
 rotatePlayers n = do
@@ -67,8 +52,7 @@ rotatePlayers n = do
 -- Deal n cards to the first player and rotate the players
 dealAndShift :: Int -> GameState ()
 dealAndShift n = do
-  dealHand n --(\p1 -> p1 .~ hand, \val p1 -> hand .~ val $ p1)
---  deal n hand --(hand :: ([Card] -> f [Card]) -> Player -> f Player) :: GameState ())
+  dealHand n
   rotatePlayers 1
 
 dealHands :: Int -> GameState ()
