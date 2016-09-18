@@ -7,7 +7,10 @@ import Control.Lens
 data Card = Card
   { _color :: Color
   , _num   :: Int
-  } deriving (Show)
+  }
+
+instance Show Card where
+  show c = (show . _color) c ++ " " ++ (show . _num) c
 
 data Color = VIOLET | INDIGO | BLUE
   | GREEN | YELLOW | ORANGE | RED
@@ -24,13 +27,31 @@ numbers = [1 .. length colors]
 cards = map newCard $ foldl (++) [] $
   [[(c,n) | c <- colors] | n <- numbers]
 
-data Player = Player
-  { _name    :: String
-  , _hand    :: [Card]
-  , _palette :: [Card]
-  } deriving (Show)
+data Action =
+    Play Card
+  | Discard Card
+  | PlayDiscard Card Card
+  | DoNothing
 
-defPlayer = Player { _name = "", _hand = [], _palette = [] }
+data Player = Player
+  { _name     :: String
+  , _hand     :: [Card]
+  , _palette  :: [Card]
+  , _strategy :: Game -> Action
+  }
+
+instance Show Player where
+  show p =
+    "    name    = " ++ show (_name p) ++ "\n" ++
+    "    hand    = " ++ show (_hand p) ++ "\n" ++
+    "    palette = " ++ show (_palette p) ++ "\n"
+
+defPlayer = Player
+  { _name     = ""
+  , _hand     = []
+  , _palette  = []
+  , _strategy = (\g -> DoNothing)
+  }
 
 card_comp :: Card -> Card -> Ordering
 card_comp (Card {_color = c1, _num = n1})
@@ -52,6 +73,7 @@ instance Eq Card where
 
 data Game = Game
   { _deck    :: [Card]
+  , _canvas  :: [Card]
   , _players :: [Player]
   , _gen     :: StdGen
   , _shuffle :: [Card] -> [Card]

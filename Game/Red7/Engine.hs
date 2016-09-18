@@ -6,6 +6,7 @@ import Control.Monad.State.Lazy (put, get)
 import Control.Monad (replicateM)
 import Control.Lens
 import Control.Monad.State.Class (MonadState)
+import Data.Ord
 
 import Game.Red7.Types
 import Game.Red7.Lib
@@ -47,7 +48,8 @@ dealPalette n = do
 rotatePlayers :: Int -> GameState ()
 rotatePlayers n = do
   g <- get
-  put $ g { _players = rotate n (_players g) }
+  let ps = _players g
+  put $ g { _players = rotate n ps }
 
 -- Deal n cards to the first player and rotate the players
 dealAndShift :: Int -> GameState ()
@@ -67,7 +69,11 @@ dealPalettes n = do
   replicateM (length $ g ^. players) (dealPalette n >> rotatePlayers 1)
   return ()
 
-setupPlayers = undefined
+setupPlayers = do
+  g <- get
+  rotatePlayers $ 1 + maxByIndex (comparing $ head . _palette) (g ^. players)
+--  maximumBy (fst . (^. palette)) (g ^. players)
+  return ()
 
 -- Shuffle deck, deal 7 cards each, deal 1 card to each player's palette,
 -- and shift the players list such that the player to the left of the
@@ -77,7 +83,7 @@ setupGame = do
   shuffleDeck
   dealHands    7
   dealPalettes 1
---  setupPlayers
+  setupPlayers
 
 ------------------------------------------------------------------------------
 winner :: Card -> [Player] -> Maybe Player
@@ -135,19 +141,6 @@ most_even' = (\cs' ->
     then (length cs', maximum cs')
     else (0, defCard))
   . (filter (even . _num))
-
-maybeMaxBy        :: (Player -> Player -> Maybe Ordering) -> [Player] -> Maybe Player
-maybeMaxBy _ []   = Nothing
-maybeMaxBy cmp xs = foldl maxBy Nothing $ map Just xs
-                      where
-  maxBy Nothing Nothing = Nothing
-  maxBy Nothing y = y
-  maxBy x Nothing = x
-  maxBy (Just x) (Just y) = case cmp x y of
-    Just GT -> Just x
-    Just LT -> Just y
-    Just EQ -> Just y
-    _       -> Nothing
 
 most_even :: [Player] -> Maybe Player
 most_even = maybeMaxBy (\p1 p2 ->
