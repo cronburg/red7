@@ -4,3 +4,4 @@ cabal.sandbox.config
 Setup
 dist/
 .cabal-sandbox/
+/*.pdf

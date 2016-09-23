@@ -1,15 +1,20 @@
-{-# LANGUAGE RankNTypes, KindSignatures, FlexibleContexts #-}
+{-# LANGUAGE RankNTypes, KindSignatures, FlexibleContexts,
+             BangPatterns #-}
 module Game.Red7.Engine where
-import Data.List (maximumBy, group, groupBy, sort)
+import Data.List (maximumBy, group, groupBy, sort, elemIndex)
 import Data.Maybe (maybeToList, fromJust)
-import Control.Monad.State.Lazy (put, get)
-import Control.Monad (replicateM)
+import Control.Monad.State.Lazy (put, get, liftIO, execState, runState)
+import Control.Monad (replicateM, liftM)
+import Control.Monad.Trans (lift)
 import Control.Lens
 import Control.Monad.State.Class (MonadState)
 import Data.Ord
+import System.IO.Unsafe (unsafePerformIO)
 
 import Game.Red7.Types
 import Game.Red7.Lib
+
+import Debug.Trace (trace, traceM)
 
 shuffleDeck :: GameState ()
 shuffleDeck = do
@@ -33,23 +38,36 @@ draw n = do
 dealHand n = do
   cs <- draw n
   g  <- get
-  let p1  = head (g ^. players)
-  let p1' = hand .~ (cs ++ (p1 ^. hand)) $ p1
-  put $ players .~ (p1' : (tail $ g ^. players)) $ g
+  let p  = p1 g
+  let p' = hand .~ (cs ++ (p ^. hand)) $ p
+  put $ players .~ (p' : (tail $ g ^. players)) $ g
 
 dealPalette n = do
   cs <- draw n
   g  <- get
-  let p1 = head (g ^. players)
-  let p1' = palette .~ (cs ++ (p1 ^. palette)) $ p1
-  put $ players .~ (p1' : (tail $ g ^. players)) $ g
+  let p = p1 g
+  let p' = palette .~ (cs ++ (p ^. palette)) $ p
+  put $ players .~ (p' : (tail $ g ^. players)) $ g
 
--- Rotate 
+-- Apply fncn to field f in the state monad
+appField fncn f f' = get >>= \g -> put $ f' .~ (fncn $ g ^. f) $ g
+
+rotateField f f' n = appField (rotate n) f f'
+
+-- TODO: figure out how to pass Getter and Setter lense type(s) in
+-- one argument.
 rotatePlayers :: Int -> GameState ()
-rotatePlayers n = do
-  g <- get
-  let ps = _players g
-  put $ g { _players = rotate n ps }
+rotatePlayers = rotateField players players
+
+rotateHand n = do
+  p <- get
+  traceM $ "rotateHand: " ++ show p
+  put $ p { _hand = rotate n $ _hand p }
+
+--do
+--  g <- get
+--  let ps = _players g
+--  put $ g { _players = rotate n ps }
 
 -- Deal n cards to the first player and rotate the players
 dealAndShift :: Int -> GameState ()
@@ -75,6 +93,13 @@ setupPlayers = do
 --  maximumBy (fst . (^. palette)) (g ^. players)
   return ()
 
+dealCanvas = do
+  g <- get
+  let cs = g ^. deck
+  put $ deck .~ tail cs $ g
+  g' <- get
+  put $ canvas .~ (head cs : g' ^. canvas) $ g'
+
 -- Shuffle deck, deal 7 cards each, deal 1 card to each player's palette,
 -- and shift the players list such that the player to the left of the
 -- player with the highest:
@@ -84,6 +109,122 @@ setupGame = do
   dealHands    7
   dealPalettes 1
   setupPlayers
+  dealCanvas
+
+-- Take a card from the given record location (lens) of the game
+takeCard src src' = do
+  g <- get
+  let cs  = g ^. src
+  let c   = head cs
+  let cs' = tail cs
+  put $ src' .~ cs' $ g
+  return c
+
+-- Put the given card at the head of the list of the given record location (lens)
+putCard dest dest' c = do
+  g <- get
+  let cs' = c : (g ^. dest)
+  put $ dest' .~ cs' $ g
+
+--moveCard :: (Getting [Card] s [Card]) -> (ASetter s s [Card] [Card]) -> GameState ()
+moveCard s s' d d' = takeCard s s' >>= putCard d d'
+
+play' :: Card -> PlayerState Bool
+play' c = do
+  p <- get
+  case elemIndex c (p ^. hand) of
+    Nothing -> return False -- Can't play that card
+    Just i  -> do
+      rotateHand i
+      p <- get
+      let cs  = _hand p
+      let c   = head cs
+      let cs' = tail cs
+      let ps' = c : _palette p
+      put $ p { _hand = cs', _palette = ps' }
+      return True
+
+-- TODO: lifting between Game and Player states
+play :: Card -> GameState Bool
+play c = do
+  g <- get
+  let (s,p) = runState (play' c) (p1 g)
+  put $ g { _players = p : (tail . _players $ g) }
+  return s
+
+-- Discard the given card from the player's hand
+discard' :: Card -> PlayerState Bool
+discard' c = do
+  p <- get
+  case elemIndex c (p ^. hand) of
+    Nothing -> return False
+    Just i -> do
+      rotateHand $ (i - 1) --`mod` (length $ _hand p)
+      p <- get
+      traceM $ "XXX: Card = " ++ (show $ head . _hand $ p)
+      --traceM $ "p = " ++ show p
+      put $ p { _hand = tail . _hand $ p }
+      return True
+
+discard :: Card -> GameState Bool
+discard c = do
+  g <- get
+  let (s,p) = runState (discard' c) (p1 g)
+  traceM $ "DISCARD: " ++ (show p)
+  if s
+    then put $ g { _players = p : (tail . _players $ g)
+                 , _canvas  = c : (_canvas g) }
+    else return ()
+  return s
+
+killPlayer :: GameState Bool
+killPlayer = get >>= (\g -> put $ g { _players = tail . _players $ g }) >> return True
+
+doAct :: Action -> GameState Bool
+doAct a = do
+  case a of
+    Play c -> play c
+    Discard c -> discard c
+    PlayDiscard c1 c2 -> play c1 >> discard c2
+    DoNothing -> killPlayer
+
+describe :: Action -> GameState ()
+describe a = do
+  g <- get
+  let p = head . _players $ g
+  -- TODO lift IO
+  traceM $ (_name p) ++ " does " ++ (show a)
+
+isGameOver g = (length $ _players g) <= 1
+
+-- TODO: remove all calls to 'head' of lists?
+playGame' :: GameState Player
+playGame' = do
+  g <- get
+  -- TODO: refer to deckbuild for how I handled lift / MonadTrans.
+  -- Maybe there's a deriving instance now?
+  if isGameOver g
+    then return $ head . _players $ g
+    else do
+      let !a = unsafePerformIO $ (_strategy . head . _players $ g) g
+      describe a
+      doAct a
+      rotatePlayers 1
+      playGame'
+
+playGame = setupGame >> playGame'
+
+------------------------------------------------------------------------------
+-- Play the top card of the 1st player's hand to their palette
+playToPalette :: Game -> Game
+playToPalette = execState $ do
+  g <- get
+  let ps  = g ^. players
+  let p   = p1 g
+  let p'  = hand .~ (tail $ p ^. hand) $ p
+  let c   = head $ p ^. hand
+  let p'' = palette .~ (c : p ^. palette) $ p'
+  put $ players .~ (p'' : tail ps) $ g
 
 ------------------------------------------------------------------------------
 winner :: Card -> [Player] -> Maybe Player
@@ -95,6 +236,9 @@ winner top = case _color top of
   YELLOW -> Just . most_color
   ORANGE -> Just . most_number
   RED    -> Just . highest
+
+currWinner :: Game -> Maybe Player
+currWinner g = winner (head $ g ^. canvas) (g ^. players)
 
 -----------------------------
 most_below' n = (\cs' ->

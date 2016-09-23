@@ -6,7 +6,7 @@ import Game.Red7.Lib
 import Control.Monad.State.Lazy (execState)
 import Control.Lens
 
-p1 = defPlayer
+p1' = defPlayer
   { _name  = "Karl"
   , _palette = [Card {_color = RED, _num = 7}]
   }
@@ -26,10 +26,13 @@ p4 = defPlayer
   , _palette = [Card {_color = ORANGE, _num = 6}]
   }
 
-fstPlayers = [p1,p2,p3,p4]
+fstPlayers = [p1',p2] --,p3,p4]
 
 noPalette p = p {_palette = []}
 fstPlayers' = map noPalette fstPlayers
 
 game = (defGame (mkStdGen 31)) {_players = fstPlayers'}
+
+--tests = map (\(x,y) -> execState (setupGame >> x) game) [
+--  (discard (Card GREEN 3), 
 

@@ -32,12 +32,15 @@ data Action =
   | Discard Card
   | PlayDiscard Card Card
   | DoNothing
+  deriving (Eq, Show)
+
+type Strategy = Game -> IO Action
 
 data Player = Player
   { _name     :: String
   , _hand     :: [Card]
   , _palette  :: [Card]
-  , _strategy :: Game -> Action
+  , _strategy :: Strategy
   }
 
 instance Show Player where
@@ -46,11 +49,14 @@ instance Show Player where
     "    hand    = " ++ show (_hand p) ++ "\n" ++
     "    palette = " ++ show (_palette p) ++ "\n"
 
+instance Eq Player where
+  p1 == p2 = _name p1 == _name p2
+
 defPlayer = Player
   { _name     = ""
   , _hand     = []
   , _palette  = []
-  , _strategy = (\g -> DoNothing)
+  , _strategy = (\g -> return DoNothing)
   }
 
 card_comp :: Card -> Card -> Ordering
@@ -79,11 +85,14 @@ data Game = Game
   , _shuffle :: [Card] -> [Card]
   }
 
+p1 = head . _players
+
 defGame' = Game
   { _shuffle = shuffleCards (mkStdGen 0)
   , _gen     = mkStdGen 1
   , _players = []
   , _deck    = shuffleCards (mkStdGen 2) cards
+  , _canvas  = []
   }
 
 defGame gen = defGame'
@@ -93,11 +102,14 @@ defGame gen = defGame'
   }
 
 instance Show Game where
-  show (Game { _deck = d , _players = ps }) =
+  show (Game { _deck = d , _players = ps, _canvas = cvs }) =
+    "  canvas  = " ++ show cvs ++ "\n" ++
     "  deck    = " ++ show d  ++ "\n" ++
     "  players = " ++ show ps ++ "\n"
 
 type GameState = State Game
+
+type PlayerState = State Player
 
 makeLenses ''Card
 makeLenses ''Game
