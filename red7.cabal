@@ -21,7 +21,7 @@ executable red7
   -- other-extensions:    
   --build-depends:       base >=4.8 && <=4.9, random-shuffle >=0.0 && <0.1, random,
   build-depends:          base
-                        , liquidhaskell
+                        --, liquidhaskell
                         , random-shuffle
                         , random
                         , mtl

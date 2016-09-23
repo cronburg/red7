@@ -75,7 +75,7 @@ instance Ord Card where
   compare = card_comp
 
 instance Eq Card where
-  c1 == c2 = _num c1 == _num c2
+  (Card n1 c1) == (Card n2 c2) = (cmp_test_fst (n1, c1) (n2, c2) == EQ)
 
 data Game = Game
   { _deck    :: [Card]

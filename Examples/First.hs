@@ -6,6 +6,10 @@ import Game.Red7.Lib
 import Control.Monad.State.Lazy (execState)
 import Control.Lens
 
+-- TODO: Learn how to use QuickCheck
+-- TODO: make QuickCheck only a dependency of the testing part of the package
+-- TODO: Parse example players with PADS? QuickCheck is probably good enough.
+
 p1' = defPlayer
   { _name  = "Karl"
   , _palette = [Card {_color = RED, _num = 7}]
