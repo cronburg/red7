@@ -10,7 +10,7 @@ data Card = Card
   }
 
 instance Show Card where
-  show c = (show . _color) c ++ " " ++ (show . _num) c
+  show c = "Card " ++ (show . _color) c ++ " " ++ (show . _num) c
 
 data Color = VIOLET | INDIGO | BLUE
   | GREEN | YELLOW | ORANGE | RED

@@ -1,5 +1,5 @@
 {-# LANGUAGE RankNTypes, KindSignatures, FlexibleContexts,
-             BangPatterns #-}
+             BangPatterns, LambdaCase #-}
 module Game.Red7.Engine where
 import Data.List (maximumBy, group, groupBy, sort, elemIndex)
 import Data.Maybe (maybeToList, fromJust)
@@ -17,16 +17,14 @@ import Game.Red7.Lib
 import Debug.Trace (trace, traceM)
 
 shuffleDeck :: GameState ()
-shuffleDeck = do
-  g <- get
-  put $ g { _deck = _shuffle g $ _deck g }
+shuffleDeck = appFieldS _shuffle deck deck
 
 -- Draw n cards from the deck
 draw :: Int -> GameState [Card]
 draw n = do
   g <- get
   let cs    = take n $ _deck g
-  let deck' = drop n $ _deck g
+      deck' = drop n $ _deck g
   put $ deck .~ deck' $ g
   return cs
 
@@ -35,22 +33,23 @@ draw n = do
 
 -- Deal n cards to the first player in the list of players
 -- (either to their palette or to their hand)
-dealHand n = do
+deal getter setter n = do
   cs <- draw n
   g  <- get
   let p  = p1 g
-  let p' = hand .~ (cs ++ (p ^. hand)) $ p
+  -- TODO: omg I need Internet so I can remember how to lift / transform.
+  let p' = execState (appField (\xs -> cs ++ xs) getter setter) p
+--  let p' = setter .~ (\xs -> cs ++ (p ^. getter)) $ p
   put $ players .~ (p' : (tail $ g ^. players)) $ g
 
-dealPalette n = do
-  cs <- draw n
-  g  <- get
-  let p = p1 g
-  let p' = palette .~ (cs ++ (p ^. palette)) $ p
-  put $ players .~ (p' : (tail $ g ^. players)) $ g
+dealHand    = deal hand hand
+dealPalette = deal palette palette
 
 -- Apply fncn to field f in the state monad
-appField fncn f f' = get >>= \g -> put $ f' .~ (fncn $ g ^. f) $ g
+appField fncn f f'  = get >>= \state -> put $ f' .~ (fncn $ state ^. f) $ state
+
+-- appField, but where the fncn also takes in the current state
+appFieldS fncn f f' = get >>= \state -> put $ f' .~ (fncn state $ state ^. f) $ state
 
 rotateField f f' n = appField (rotate n) f f'
 
@@ -59,10 +58,7 @@ rotateField f f' n = appField (rotate n) f f'
 rotatePlayers :: Int -> GameState ()
 rotatePlayers = rotateField players players
 
-rotateHand n = do
-  p <- get
-  traceM $ "rotateHand: " ++ show p
-  put $ p { _hand = rotate n $ _hand p }
+rotateHand n = appField (rotate n) hand hand
 
 --do
 --  g <- get
@@ -75,17 +71,14 @@ dealAndShift n = do
   dealHand n
   rotatePlayers 1
 
-dealHands :: Int -> GameState ()
-dealHands n = do
+--dealXS :: Int -> GameState ()
+dealXS dealFncn n = do
   g <- get
-  replicateM (length $ g ^. players) (dealHand n >> rotatePlayers 1)
+  replicateM (length $ g ^. players) (dealFncn n >> rotatePlayers 1)
   return ()
 
-dealPalettes :: Int -> GameState ()
-dealPalettes n = do
-  g <- get
-  replicateM (length $ g ^. players) (dealPalette n >> rotatePlayers 1)
-  return ()
+dealHands    = dealXS dealHand
+dealPalettes = dealXS dealPalette
 
 setupPlayers = do
   g <- get
@@ -95,10 +88,9 @@ setupPlayers = do
 
 dealCanvas = do
   g <- get
-  let cs = g ^. deck
-  put $ deck .~ tail cs $ g
-  g' <- get
-  put $ canvas .~ (head cs : g' ^. canvas) $ g'
+  let c = head $ g ^. deck
+  appField tail deck deck
+  appField (\cvs -> c : cvs) canvas canvas
 
 -- Shuffle deck, deal 7 cards each, deal 1 card to each player's palette,
 -- and shift the players list such that the player to the left of the
@@ -115,8 +107,8 @@ setupGame = do
 takeCard src src' = do
   g <- get
   let cs  = g ^. src
-  let c   = head cs
-  let cs' = tail cs
+      c   = head cs
+      cs' = tail cs
   put $ src' .~ cs' $ g
   return c
 
@@ -138,9 +130,9 @@ play' c = do
       rotateHand i
       p <- get
       let cs  = _hand p
-      let c   = head cs
-      let cs' = tail cs
-      let ps' = c : _palette p
+          c   = head cs
+          cs' = tail cs
+          ps' = c : _palette p
       put $ p { _hand = cs', _palette = ps' }
       return True
 
@@ -161,7 +153,7 @@ discard' c = do
     Just i -> do
       rotateHand $ (i - 1) --`mod` (length $ _hand p)
       p <- get
-      traceM $ "XXX: Card = " ++ (show $ head . _hand $ p)
+      --traceM $ "XXX: Card = " ++ (show $ head . _hand $ p)
       --traceM $ "p = " ++ show p
       put $ p { _hand = tail . _hand $ p }
       return True
@@ -255,18 +247,17 @@ most_below n = maybeMaxBy (\p1 p2 ->
         else Just $ a `compare` b)
 
 -----------------------------
-most_row' cs = case length cs of
-  0 -> (0, defCard) -- should never have an empty palette
-  1 -> (1, head cs)
-  _ ->
-    maximumBy cmp_test_fst
-    $ map (\cs -> (length cs, (fst . head) cs))
-    $ filter (\(c:cs) -> snd c == 1)
-    $ groupBy (\a b -> snd a == snd b)
-    $ zipWith (\a b -> (a, _num b - _num a)) cs (tail cs)
+most_row' [] = (0, defCard)
+most_row' cs =
+  (\case
+    Just xs -> ((+) 1 $ length xs, snd . last $ xs)
+    Nothing -> (1, last cs))
+  $ maybeMaxBy (\a b -> Just $ length a `compare` length b)
+  $ filter (((==) 1) . fst . head)
+  $ groupBy (\a b -> fst a == fst b)
+  $ zipWith (\a b -> (_num a - _num b, a)) cs (defCard : init cs)
 
-most_row = maximumBy (\p1 p2 ->
-  (most_row' . _palette) p1 `compare` (most_row' . _palette) p2)
+most_row = maximumBy $ comparing $ most_row' . sort . _palette
 
 -----------------------------
 -- http://stackoverflow.com/a/16109302

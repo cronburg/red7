@@ -11,7 +11,7 @@ import Control.Lens
 -- TODO: Parse example players with PADS? QuickCheck is probably good enough.
 
 p1' = defPlayer
-  { _name  = "Karl"
+  { _name  = "Karl "
   , _palette = [Card {_color = RED, _num = 7}]
   }
 
