@@ -1,5 +1,5 @@
-module Examples.Greedy where
-import Examples.First (game)
+module Game.Red7.Examples.Greedy where
+import Game.Red7.Examples.First (game)
 import Game.Red7.Types
 import Game.Red7.Engine
 import Game.Red7.Lib

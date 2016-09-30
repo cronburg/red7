@@ -1,4 +1,4 @@
-module Examples.First where
+module Game.Red7.Examples.First where
 import Game.Red7.Types
 import Game.Red7.Engine
 import Game.Red7.Lib

@@ -5,3 +5,6 @@ Setup
 dist/
 .cabal-sandbox/
 /*.pdf
+/stack.yaml
+/.stack-work
+/bugs

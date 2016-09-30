@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TemplateHaskell, GeneralizedNewtypeDeriving #-}
 module Game.Red7.Types where
 import Game.Red7.Lib
 import Control.Monad.State.Lazy
@@ -83,6 +83,7 @@ data Game = Game
   , _players :: [Player]
   , _gen     :: StdGen
   , _shuffle :: [Card] -> [Card]
+  , _mode    :: GameMode
   }
 
 p1 = head . _players
@@ -93,6 +94,7 @@ defGame' = Game
   , _players = []
   , _deck    = shuffleCards (mkStdGen 2) cards
   , _canvas  = []
+  , _mode    = Quiet
   }
 
 defGame gen = defGame'
@@ -102,16 +104,23 @@ defGame gen = defGame'
   }
 
 instance Show Game where
-  show (Game { _deck = d , _players = ps, _canvas = cvs }) =
-    "  canvas  = " ++ show cvs ++ "\n" ++
-    "  deck    = " ++ show d  ++ "\n" ++
-    "  players = " ++ show ps ++ "\n"
+  show (Game { _deck = d , _players = ps, _canvas = cvs, _mode = m }) =
+       "  canvas  = " ++ show cvs ++ "\n"
+    ++ "  deck    = " ++ show d   ++ "\n"
+    ++ "  players = " ++ show ps  ++ "\n"
+    ++ "  mode    = " ++ show m   ++ "\n"
 
-type GameState = State Game
+type GameState   = StateT Game IO
 
-type PlayerState = State Player
+type PlayerState = StateT Player IO
+
+data GameMode =
+    Quiet -- Don't print anything when playing
+  | StdIO -- Print actions / events to stdout
+  deriving (Eq, Ord, Show)
 
 makeLenses ''Card
 makeLenses ''Game
 makeLenses ''Player
+
 

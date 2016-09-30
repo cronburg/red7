@@ -6,8 +6,12 @@ module Game.Red7.Lib
   , rotate
   , maybeMaxBy
   , maxByIndex
+  , hoist
+  , generalize
   ) where
 
+import Data.Functor.Identity (Identity(..))
+import Control.Monad.State.Lazy (StateT(..), State, execState, runState)
 import System.Random.Shuffle (shuffle, shuffle')
 import System.Random
 import Data.Ord
@@ -43,4 +47,12 @@ maxByIndex fncn = fst . maximumBy (\a b -> fncn (snd a) (snd b)) . zip [0..]
 -- ((uncurry fncn) . (\a b -> (snd a, snd b))) . zip [0..]
 
 --(zip [0..] vs)
+
+-- http://stackoverflow.com/a/17325795/1542000
+-- hoist == hoistState
+hoist :: Monad m => State s a -> StateT s m a
+hoist = StateT . (return .) . runState
+
+generalize :: Monad m => Identity a -> m a
+generalize = return . runIdentity
 

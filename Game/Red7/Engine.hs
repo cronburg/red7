@@ -3,7 +3,7 @@
 module Game.Red7.Engine where
 import Data.List (maximumBy, group, groupBy, sort, elemIndex)
 import Data.Maybe (maybeToList, fromJust)
-import Control.Monad.State.Lazy (put, get, liftIO, execState, runState)
+import Control.Monad.State.Lazy (put, get, liftIO, execState, runStateT, runState, StateT, State)
 import Control.Monad (replicateM, liftM)
 import Control.Monad.Trans (lift)
 import Control.Lens
@@ -16,11 +16,11 @@ import Game.Red7.Lib
 
 import Debug.Trace (trace, traceM)
 
-shuffleDeck :: GameState ()
-shuffleDeck = appFieldS _shuffle deck deck
+shuffleDeck :: State Game ()
+shuffleDeck = appFieldS _shuffle deck
 
 -- Draw n cards from the deck
-draw :: Int -> GameState [Card]
+draw :: Int -> State Game [Card]
 draw n = do
   g <- get
   let cs    = take n $ _deck g
@@ -33,32 +33,35 @@ draw n = do
 
 -- Deal n cards to the first player in the list of players
 -- (either to their palette or to their hand)
-deal getter setter n = do
+deal field n = do
   cs <- draw n
   g  <- get
   let p  = p1 g
   -- TODO: omg I need Internet so I can remember how to lift / transform.
-  let p' = execState (appField (\xs -> cs ++ xs) getter setter) p
+  let p' = execState (appField (\xs -> cs ++ xs) field) p
 --  let p' = setter .~ (\xs -> cs ++ (p ^. getter)) $ p
   put $ players .~ (p' : (tail $ g ^. players)) $ g
 
-dealHand    = deal hand hand
-dealPalette = deal palette palette
+dealHand    = deal hand
+dealPalette = deal palette
 
 -- Apply fncn to field f in the state monad
-appField fncn f f'  = get >>= \state -> put $ f' .~ (fncn $ state ^. f) $ state
+appField :: (c -> c) -> Lens' a c -> State a ()
+appField fncn f = get >>= \state -> put $ f .~ (fncn $ state ^. f) $ state
 
 -- appField, but where the fncn also takes in the current state
-appFieldS fncn f f' = get >>= \state -> put $ f' .~ (fncn state $ state ^. f) $ state
+appFieldS :: (state -> field -> field) -> Lens' state field -> State state ()
+appFieldS fncn f = get >>= \state -> put $ f .~ (fncn state $ state ^. f) $ state
 
-rotateField f f' n = appField (rotate n) f f'
+putField val f = get >>= \state -> put $ f .~ val $ state
 
--- TODO: figure out how to pass Getter and Setter lense type(s) in
+rotateField f n = appField (rotate n) f
+
 -- one argument.
-rotatePlayers :: Int -> GameState ()
-rotatePlayers = rotateField players players
+rotatePlayers :: Int -> State Game ()
+rotatePlayers = rotateField players
 
-rotateHand n = appField (rotate n) hand hand
+rotateHand n = appField (rotate n) hand
 
 --do
 --  g <- get
@@ -66,12 +69,12 @@ rotateHand n = appField (rotate n) hand hand
 --  put $ g { _players = rotate n ps }
 
 -- Deal n cards to the first player and rotate the players
-dealAndShift :: Int -> GameState ()
+dealAndShift :: Int -> State Game ()
 dealAndShift n = do
   dealHand n
   rotatePlayers 1
 
---dealXS :: Int -> GameState ()
+--dealXS :: Int -> State Game ()
 dealXS dealFncn n = do
   g <- get
   replicateM (length $ g ^. players) (dealFncn n >> rotatePlayers 1)
@@ -89,13 +92,13 @@ setupPlayers = do
 dealCanvas = do
   g <- get
   let c = head $ g ^. deck
-  appField tail deck deck
-  appField (\cvs -> c : cvs) canvas canvas
+  appField tail deck
+  appField (\cvs -> c : cvs) canvas
 
 -- Shuffle deck, deal 7 cards each, deal 1 card to each player's palette,
 -- and shift the players list such that the player to the left of the
 -- player with the highest:
-setupGame :: GameState ()
+setupGame :: State Game ()
 setupGame = do
   shuffleDeck
   dealHands    7
@@ -118,10 +121,10 @@ putCard dest dest' c = do
   let cs' = c : (g ^. dest)
   put $ dest' .~ cs' $ g
 
---moveCard :: (Getting [Card] s [Card]) -> (ASetter s s [Card] [Card]) -> GameState ()
+--moveCard :: (Getting [Card] s [Card]) -> (ASetter s s [Card] [Card]) -> State Game ()
 moveCard s s' d d' = takeCard s s' >>= putCard d d'
 
-play' :: Card -> PlayerState Bool
+play' :: Card -> State Player Bool
 play' c = do
   p <- get
   case elemIndex c (p ^. hand) of
@@ -137,15 +140,15 @@ play' c = do
       return True
 
 -- TODO: lifting between Game and Player states
-play :: Card -> GameState Bool
+play :: Card -> State Game Bool
 play c = do
   g <- get
-  let (s,p) = runState (play' c) (p1 g)
+  (s, p) <- generalize $ runStateT (play' c) (p1 g)
   put $ g { _players = p : (tail . _players $ g) }
   return s
 
 -- Discard the given card from the player's hand
-discard' :: Card -> PlayerState Bool
+discard' :: Card -> State Player Bool
 discard' c = do
   p <- get
   case elemIndex c (p ^. hand) of
@@ -158,10 +161,10 @@ discard' c = do
       put $ p { _hand = tail . _hand $ p }
       return True
 
-discard :: Card -> GameState Bool
+discard :: Card -> State Game Bool
 discard c = do
   g <- get
-  let (s,p) = runState (discard' c) (p1 g)
+  (s, p) <- generalize $ runStateT (discard' c) (p1 g)
   traceM $ "DISCARD: " ++ (show p)
   if s
     then put $ g { _players = p : (tail . _players $ g)
@@ -169,10 +172,10 @@ discard c = do
     else return ()
   return s
 
-killPlayer :: GameState Bool
+killPlayer :: State Game Bool
 killPlayer = get >>= (\g -> put $ g { _players = tail . _players $ g }) >> return True
 
-doAct :: Action -> GameState Bool
+doAct :: Action -> State Game Bool
 doAct a = do
   case a of
     Play c -> play c
@@ -180,17 +183,22 @@ doAct a = do
     PlayDiscard c1 c2 -> play c1 >> discard c2
     DoNothing -> killPlayer
 
-describe :: Action -> GameState ()
-describe a = do
+describe :: Bool -> Action -> State Game ()
+describe s a = do
   g <- get
-  let p = head . _players $ g
-  -- TODO lift IO
-  traceM $ (_name p) ++ " does " ++ (show a)
+  case g ^. mode of
+    Quiet -> return ()
+    StdIO -> do
+      let p = head . _players $ g
+      -- TODO lift IO
+      if s
+        then traceM $ (_name p) ++ " does " ++ (show a)
+        else traceM $ (_name p) ++ " FAILED TO " ++ (show a)
 
 isGameOver g = (length $ _players g) <= 1
 
 -- TODO: remove all calls to 'head' of lists?
-playGame' :: GameState Player
+playGame' :: StateT Game IO Player
 playGame' = do
   g <- get
   -- TODO: refer to deckbuild for how I handled lift / MonadTrans.
@@ -198,13 +206,16 @@ playGame' = do
   if isGameOver g
     then return $ head . _players $ g
     else do
-      let !a = unsafePerformIO $ (_strategy . head . _players $ g) g
-      describe a
-      doAct a
-      rotatePlayers 1
+      a <- liftIO $ (_strategy . head . _players $ g) g
+      hoist $ do
+        s <- doAct a
+        describe s a
+        rotatePlayers 1
       playGame'
 
-playGame = setupGame >> playGame'
+playGame = (hoist setupGame) >> playGame'
+
+playGameStdIO = putField Quiet mode >> playGame
 
 ------------------------------------------------------------------------------
 -- Play the top card of the 1st player's hand to their palette
