@@ -33,6 +33,7 @@ draw n = do
 
 -- Deal n cards to the first player in the list of players
 -- (either to their palette or to their hand)
+deal :: Lens' Player [Card] -> Int -> State Game ()
 deal field n = do
   cs <- draw n
   g  <- get
@@ -55,6 +56,7 @@ appFieldS fncn f = get >>= \state -> put $ f .~ (fncn state $ state ^. f) $ stat
 
 putField val f = get >>= \state -> put $ f .~ val $ state
 
+rotateField :: Lens' a [c] -> Int -> State a ()
 rotateField f n = appField (rotate n) f
 
 -- one argument.
