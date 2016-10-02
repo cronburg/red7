@@ -30,3 +30,6 @@ install:
 script:
   - stack --no-terminal --skip-ghc-check test
 
+notifications:
+  slack: siriusly:EnqAbdpRhDntM48M2f0WCzHe#testing
+
