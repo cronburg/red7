@@ -23,6 +23,7 @@ addons:
     - ghc-8.0.1
 
 install:
+  - stack --no-terminal --skip-ghc-check init
   - stack --no-terminal --skip-ghc-check setup
   - stack --no-terminal --skip-ghc-check test --only-snapshot
 
